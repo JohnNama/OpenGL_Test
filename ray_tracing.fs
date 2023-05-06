@@ -10,9 +10,10 @@ out vec4 FragColor;
 #define MAT_DIELECTRIC 3
 #define PI 3.141592653589793238462643
 
-#define EYE_PATH_COUNT 4
-#define LIGHT_PATH_COUNT 2
-//ÀÊª˙ ˝
+#define MAX_PATH_LENGTH 4
+#define EYE_PATH_COUNT 10
+#define LIGHT_PATH_COUNT 1
+//ÈöèÊú∫Êï∞
 uint m_u = uint(521288629);
 uint m_v = uint(362436069);
 // Structs
@@ -82,6 +83,7 @@ uniform vec2 screen_size;
 uniform sampler2D env_map;
 uniform vec3 camera_look_from;
 uniform float current_frame;
+uniform float random_pos;
 
 Lambertian m_lambertian[10]; // m_ stand for member
 Light m_light[10];
@@ -126,14 +128,16 @@ vec3 hemisphereSample_cos(float, float);
 float GetUniform();
 vec3 sphereSample_uniform(float, float);
 vec3 hemisphereSample_cosWeighted(float, float);
-
+vec3 lightTrace(Ray);
+float rand_2to1(vec2);
 void main() {
 	initScene();
 	vec3 color = vec3(0.0);
 
-	int spp = 100;
+	int spp = 512;
 	for(int i = 0; i<spp; i++) {
 		color += rayTrace(cameraRay(camera, ScreenCoords + vec2(GetUniform(), GetUniform())/ screen_size));
+//		color += lightTrace(cameraRay(camera, ScreenCoords + vec2(GetUniform(), GetUniform())/ screen_size));
 	}
 	color /= spp;
 	color = pow(color, vec3(1.0 / 2.2));
@@ -160,20 +164,20 @@ World createWorld() {
 	World world;
 	world.object_count = 20;
 //  Taichi test set
-	/*
-	world.objects[0] = createSphere(vec3(0.0, 5.4,  -1.0), 3.0, 0, MAT_LIGHT); // ground
-//	world.objects[0] = createSphere(vec3(0.0, 1.5,  -1.0), 0.3, 0, MAT_LIGHT);
+//	/*
+//	world.objects[0] = createSphere(vec3(0.0, 5.4,  -1.0), 3.0, 0, MAT_LIGHT); // ground
+	world.objects[0] = createSphere(vec3(0.0, 2.0,  -1.0), 0.2, 0, MAT_LIGHT);
 	world.objects[1] = createSphere(vec3(0.0, -100.5,  -1.0), 100.0, 0, MAT_LAMBERTIAN); // ground
 	world.objects[2] = createSphere(vec3(0.0, 102.5,  -1.0), 100.0, 0, MAT_LAMBERTIAN); // ceiling
 	world.objects[3] = createSphere(vec3(0.0, 1.0,  101.0), 100.0, 0, MAT_LAMBERTIAN); // back wall
 	world.objects[4] = createSphere(vec3(-101.5, 0.0,  -1.0), 100.0, 1, MAT_LAMBERTIAN); // right wall
 	world.objects[5] = createSphere(vec3(101.5, 0.0,  -1.0), 100.0, 2, MAT_LAMBERTIAN); // left wall
 	world.objects[6] = createSphere(vec3(0.0,  -0.2, -1.5), 0.5, 0, MAT_LAMBERTIAN);
-//	world.objects[7] = createSphere(vec3(-0.8, 0.2, -1.0), 0.7, 0, MAT_METALLIC);
-//	world.objects[8] = createSphere(vec3(0.7, 0, -0.5), 0.5, 0, MAT_DIELECTRIC);
-	*/
+	world.objects[7] = createSphere(vec3(-0.8, 0.2, -1.0), 0.7, 0, MAT_METALLIC);
+	world.objects[8] = createSphere(vec3(0.7, 0, -0.5), 0.5, 0, MAT_DIELECTRIC);
+//	*/
 //  Custom test set
-//	/*
+	/*
 	world.objects[0] = createSphere(vec3(0.0, 15.0, 0.0), 3.0, 0, MAT_LIGHT);
 	world.objects[1] = createSphere(vec3(0.0, -1000.0,  -1.0), 1000.0, 4, MAT_LAMBERTIAN); // ground
 	world.objects[2] = createSphere(vec3(0.0, 2.0,  0.0), 1.0, 0, MAT_DIELECTRIC); 
@@ -181,10 +185,10 @@ World createWorld() {
 	world.objects[4] = createSphere(vec3(4.0, 2.0,  0.0), 1.0, 2, MAT_DIELECTRIC);
 	world.objects[5] = createSphere(vec3(2.0, 2.0,  -4.0), 1.0, 3, MAT_DIELECTRIC);
 	world.objects[6] = createSphere(vec3(2.0, 2.0,  4.0), 1.0, 4, MAT_DIELECTRIC);
-//	world.objects[7] = createSphere(vec3(10.0, 15.0, 0.0), 3.0, 2, MAT_LIGHT);
-//	world.objects[8] = createSphere(vec3(-10.0, 15.0, 0.0), 3.0, 3, MAT_LIGHT);
+	world.objects[7] = createSphere(vec3(10.0, 10.0, 0.0), 3.0, 2, MAT_LIGHT);
+	world.objects[8] = createSphere(vec3(-10.0, 10.0, 0.0), 3.0, 3, MAT_LIGHT);
 //	world.objects[9] = createSphere(vec3(-4.0, 15.0, 4.0), 4, 5, MAT_LIGHT);
-//	*/
+	*/
 	return world;
 }
 
@@ -206,10 +210,10 @@ void initScene() {
 	m_lambertian[3] = createLambertian(vec3(0.22, 0.77, 0.73));
 	m_lambertian[4] = createLambertian(vec3(1.0, 1.0, 1.0));
 	m_lambertian[5] = createLambertian(vec3(0.3, 0.1, 0.0));
-	m_light[0] = createLight(vec3(10.0, 10.0, 10.0)); // silver
+	m_light[0] = createLight(vec3(20.0, 20.0, 20.0)); // silver
 	m_light[1] = createLight(vec3(1.0, 1.0, 1.0));	// gold
-	m_light[2] = createLight(vec3(0.5, 0.5, 0.5));
-	m_light[3] = createLight(vec3(0.22, 0.77, 0.73));
+	m_light[2] = createLight(vec3(5, 5, 5));
+	m_light[3] = createLight(vec3(2.2, 7.7, 7.3));
 	m_metallic[0] = createMetallic(vec3(1.0, 1.0, 1.0), 0.0);
 	m_metallic[1] = createMetallic(vec3(0.22, 0.77, 0.73), 0.5);
 	m_metallic[2] = createMetallic(vec3(0.75, 0.75, 0.75), 0.2);
@@ -356,6 +360,46 @@ float getWeightForPath( int s, int l ) {
     return float(s + l + 2);
 }
 
+vec3 lightTrace(Ray ray) {
+	World world = createWorld();
+	HitRecord hit_record;
+	vec3 brightness = vec3(1.0);
+	vec3 color_buffer = vec3(0.0);
+	float russian_roulette = 0.8;
+	Ray scattered_ray;
+	vec3 color = vec3(0.0);
+	
+	for(int i = 0; i < EYE_PATH_COUNT; i++) {
+		if(hitWorld(world, ray, 0.001, 100000.0, hit_record)) {
+			if(hit_record.material_type == MAT_LIGHT) {
+				LightScatter(m_light[hit_record.material_index], ray, hit_record, scattered_ray, color);
+				color_buffer = brightness * color;
+				break;
+			}
+			else {
+				if(hit_record.material_type == MAT_LAMBERTIAN) {
+					LambertianScatter(m_lambertian[hit_record.material_index], ray, hit_record, scattered_ray, color);
+				}
+				else if(hit_record.material_type == MAT_METALLIC) {
+					MetallicScatter(m_metallic[hit_record.material_index], ray, hit_record, scattered_ray, color);
+				}
+				else if(hit_record.material_type == MAT_DIELECTRIC) {
+					DielectricScatter(m_dielectric[hit_record.material_index], ray, hit_record, scattered_ray, color);
+				}
+				ray = scattered_ray;
+				brightness *= color;
+			}
+			
+		}
+		else {
+			color_buffer =  vec3(0.0);//getBackground(ray);// 
+			break;
+		}
+	}
+
+	return brightness * color_buffer;
+}
+
 vec3 rayTrace(Ray ray) {
 	World world = createWorld();
 	HitRecord hit_record;
@@ -365,10 +409,14 @@ vec3 rayTrace(Ray ray) {
 	Ray scattered_ray;
 	vec3 color = vec3(0.0);
 	
-	buildLightPath();
+//	buildLightPath();
 	
 	for(int i = 0; i < EYE_PATH_COUNT; i++) {
 		if(hitWorld(world, ray, 0.001, 100000.0, hit_record)) {
+			if(rand_2to1(vec2(GetUniform(), GetUniform())) > 0.8)
+			{
+				break;
+			}
 			if(hit_record.material_type == MAT_LIGHT) {
 				LightScatter(m_light[hit_record.material_index], ray, hit_record, scattered_ray, color);
 				color_buffer = brightness * color;
@@ -391,6 +439,7 @@ vec3 rayTrace(Ray ray) {
 //			/*
 			for(int j = 0; j < LIGHT_PATH_COUNT - 1; j++)
 			{
+				if(i + j >= MAX_PATH_LENGTH) continue;
 				vec3 dir = lightPathNode[j].ray.direction;
 				float hit_dist = distance(lightPathNode[j].ray.origin, hit_record.position);
 				HitRecord light_hit_record;
@@ -559,4 +608,11 @@ void mainImage(out vec4 O, vec2 F) {
     for (O *= l; l++ < 55.;
 	O += 0.005/abs(length(o + vec2(cos(l*(cos(f*.5)*.5+.6)+f), sin(l+f)))-
         (sin(l+f*4.)*.04+.02))*(cos(l+length(o)*4.+vec4(0,1,2,0))+1.));
+}
+
+float rand_2to1(vec2 uv ) { 
+  // 0 - 1
+	const highp float a = 12.9898, b = 78.233, c = 43758.5453;
+	highp float dt = dot( uv.xy, vec2( a,b ) ), sn = mod( dt, PI );
+	return fract(sin(sn) * c);
 }
